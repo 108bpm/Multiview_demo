@@ -1,3 +1,5 @@
+torch==2.6.0
+torchvision==0.21.0
 transformers==4.57.0
 accelerate
 tiktoken
@@ -30,7 +32,7 @@ diffusers
 timm
 tyro
 ipdb
-torchcodec==0.2 # torch==2.6.0 required
+torchcodec==0.2
 -e ./third_party/vggt
 peft
 torchcodec==0.2

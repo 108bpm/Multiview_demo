@@ -30,7 +30,7 @@
 ---
 
 ## 📢 News
-[2026-5-8] 🥳🥳**Our**'s 🎉🎉 [training and inference code](https://github.com/junjxiao/Multi-view-VLA), [pre-trained weight](https://www.modelscope.cn/models/junjxiao/Multi-view-VLA) and [data](https://www.modelscope.cn/datasets/junjxiao/libero_mv_feats) are now available.🎉🎉
+[2026-5-8] 🥳🥳**Our** 🎉🎉 [training and inference code](https://github.com/junjxiao/Multi-view-VLA), [pre-trained weight](https://www.modelscope.cn/models/junjxiao/Multi-view-VLA) and [data](https://www.modelscope.cn/datasets/junjxiao/libero_mv_feats) are now available.🎉🎉
 
 ---
 
