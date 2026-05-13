@@ -1,10 +1,4 @@
 #!/bin/bash
-eval "$(conda shell.bash hook)"
-# source activate
-conda activate python3.10
-# pip install -r requirements.txt
-# pip list
-# ls /usr/lib64/libOSMesa.so*
 ###########################################################################################
 # === Please modify the following paths according to your environment ===
 export LIBERO_HOME=path_to_LIBERO-plus_code
@@ -15,7 +9,7 @@ export PYTHONPATH=$(pwd):${PYTHONPATH} # let LIBERO find the websocket tools fro
 
 unnorm_key="franka"
 tasks_per_gpu=3
-your_ckpt=path_to_ABot_checkpoint
+your_ckpt=path_to_checkpoint
 output_dir=path_to_output_dir
 # === End of environment variable configuration ===
 ###########################################################################################

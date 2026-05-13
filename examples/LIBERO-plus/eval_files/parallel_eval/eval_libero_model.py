@@ -21,8 +21,8 @@ import cv2 as cv
 import matplotlib.pyplot as plt
 from typing import Dict
 from PIL import Image
-from ABot.model.framework.base_framework import baseframework
-from ABot.model.tools import read_mode_config
+from starVLA.model.framework.base_framework import baseframework
+from starVLA.model.tools import read_mode_config
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import torch
 

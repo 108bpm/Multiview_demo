@@ -12,7 +12,7 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 
-from ABot.model.tools import read_mode_config
+from starVLA.model.tools import read_mode_config
 
 
 class AdaptiveEnsembler:

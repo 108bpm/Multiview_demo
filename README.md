@@ -1,10 +1,10 @@
 <div align="center">
 
-<h1>Learning Action Manifolds with Multi-view Latent Priors for Robotic Manipulation</h1>
+<h1>Learning Action Manifold with Multi-view Latent Priors for Robotic Manipulation</h1>
 
 
 <p align="center">
-  <a href=""><img src="https://img.shields.io/static/v1?label=Paper&message=arXiv&color=red&logo=arXiv"></a>
+  <a href="https://arxiv.org/abs/2605.11832"><img src="https://img.shields.io/static/v1?label=Paper&message=arXiv&color=red&logo=arXiv"></a>
   <a href="https://junjxiao.github.io/Multi-view-VLA.github.io/"><img src="https://img.shields.io/badge/Project-Website-blue"></a>
     <a href="https://www.huggingface.co/datasets/junjin0/libero_mv_feats"><img src="https://img.shields.io/static/v1?label=%F0%9F%A4%97%20Model&message=HuggingFace&color=orange"></a>
     <a href="https://huggingface.co/junjin0/Multi-view-VLA"><img src="https://img.shields.io/static/v1?label=%F0%9F%A4%97%20Data&message=HuggingFace&color=orange"></a>
@@ -104,10 +104,10 @@ If you find **our model** is useful in your research or applications, please con
 
 ```
 @article{xiao2026learning,
-  title={Learning Action Manifolds with Multi-view Latent Priors for Robotic Manipulation}, 
-  author={Junjin Xiao and Dongyang Li and Yandan Yang and Shuang Zeng and Tong Lin and Xinyuan Chang and Feng Xiong and Mu Xu and Wei-Shi Zheng and Xing Wei and Zhiheng Ma and Qing Zhang},
-  year={2026},
-  journal={arxiv},
+    title={Learning Action Manifold with Multi-view Latent Priors for Robotic Manipulation}, 
+    author={Junjin Xiao and Dongyang Li and Yandan Yang and Shuang Zeng and Tong Lin and Xinyuan Chang and Feng Xiong and Mu Xu and Xing Wei and Zhiheng Ma and Qing Zhang and Wei-Shi Zheng},
+    year={2026},
+    journal={arxiv:2605.11832},
 }
             
 ```
