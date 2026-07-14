@@ -20,6 +20,10 @@ DATASET_NAMED_MIXTURES = {
         ("custom_dataset_name_2", 1.0, "custom_robot_config"),
     ],
 
+    "piper_bimanual_stack_cup_bowl": [
+        ("bimanual_stack_cup_bowl", 1.0, "piper_bimanual"),
+    ],
+
     "libero_all": [
         ("libero_object_no_noops_1.0.0_lerobot", 1.0, "libero_franka"),
         ("libero_goal_no_noops_1.0.0_lerobot", 1.0, "libero_franka"),

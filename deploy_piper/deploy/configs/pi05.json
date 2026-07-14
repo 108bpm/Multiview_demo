@@ -1,0 +1,27 @@
+{
+  "_notes": [
+    "Checkpoint outputs/pi05 (samithva/pi05_stack_cup_bowl) was trained with lerobot v0.5.1 + transformers 5.3.0; BOTH must match exactly.",
+    "transformers 5.5.x loads and runs but SILENTLY ignores vision/state inputs (nMAE 0.96 vs 0.03) — must be 5.3.0.",
+    "Activate lerobot_pi05 before starting the server; it must provide lerobot v0.5.1 and transformers 5.3.0.",
+    "Configure offline Hugging Face cache variables in that environment when required.",
+    "pi05 image keys are the raw camera names, hence the identity camera_map.",
+    "See README 'This machine's setup notes' for the full story.",
+    "compile=0: eager serving measured FASTER than torch.compile for RTC (0.19s vs 3.4s/predict; autograd guidance breaks the compiled graph) and kills the 15-20s cold start. See README RTC section."
+  ],
+  "server": {
+    "adapter": "lerobot",
+    "args": {"checkpoint": "/data/wanshan/VLAs/piper_lerobot/outputs/pi05", "device": "cuda", "fps": "30", "rtc": "1", "rtc_schedule": "exp", "compile": "0"},
+    "port": 8080
+  },
+  "client": {
+    "robot_type": "bi_piper_follower",
+    "robot_id": "bi_piper",
+    "cameras": {
+      "l_wrist": {"type": "opencv", "index_or_path": "/dev/l_wrist", "width": 480, "height": 640, "fps": 120, "rotation": -90, "fourcc": "MJPG"},
+      "top":     {"type": "opencv", "index_or_path": "/dev/top",     "width": 640, "height": 480, "fps": 120, "rotation": 0,   "fourcc": "MJPG"},
+      "r_wrist": {"type": "opencv", "index_or_path": "/dev/r_wrist", "width": 480, "height": 640, "fps": 120, "rotation": 90,  "fourcc": "MJPG"}
+    },
+    "camera_map": {"top": "top", "l_wrist": "l_wrist", "r_wrist": "r_wrist"},
+    "first_predict_timeout_s": 90
+  }
+}

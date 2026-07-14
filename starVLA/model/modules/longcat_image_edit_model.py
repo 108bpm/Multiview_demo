@@ -35,6 +35,22 @@ import os
 from PIL import Image
 from peft import PeftModel
 
+
+def _patch_peft_tensor_parallel_compat():
+    """PEFT 0.19 imports EmbeddingParallel, absent in some transformers 4.57 builds.
+
+    LongCat LoRA loading in this project does not use HF tensor parallel plans, but
+    PEFT imports the symbol unconditionally. Providing the missing symbol keeps the
+    no-TP path working without changing installed package versions.
+    """
+    try:
+        import transformers.integrations.tensor_parallel as tensor_parallel
+    except Exception:
+        return
+    if not hasattr(tensor_parallel, "EmbeddingParallel"):
+        tensor_parallel.EmbeddingParallel = tensor_parallel.ColwiseParallel
+
+
 def split_quotation(prompt_list, quote_pairs=None):
     results = []
     for prompt in prompt_list:
@@ -518,6 +534,7 @@ class LongCatImageEditModel(nn.Module):
     
     @classmethod
     def load_lora(cls, lora_model_name, transformer):
+        _patch_peft_tensor_parallel_compat()
         transformer = PeftModel.from_pretrained(transformer, lora_model_name)
         transformer = transformer.merge_and_unload()
         return transformer

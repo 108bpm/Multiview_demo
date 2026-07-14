@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+
+# coding agent 
+.codex
+.agents

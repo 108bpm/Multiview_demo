@@ -63,6 +63,14 @@ LE_ROBOT_STEPS_FILENAME = "meta/steps.pkl"
 EPSILON = 5e-4
 
 
+def _first_existing_path(dataset_path: Path, *relative_paths: str) -> Path | None:
+    for relative_path in relative_paths:
+        path = dataset_path / relative_path
+        if path.exists():
+            return path
+    return None
+
+
 def calculate_dataset_statistics(parquet_paths: list[Path]) -> dict:
     """Calculate the dataset statistics of all columns for a list of parquet files."""
     # Dataset statistics
@@ -167,6 +175,11 @@ class LeRobotSingleDataset(Dataset):
         self._tasks = self._get_tasks()
         self.curr_traj_data = None
         self.curr_traj_id = None
+        data_cfg = kwargs.get("data_cfg")
+        self.cache_parquet = bool(getattr(data_cfg, "cache_parquet", True)) if data_cfg is not None else True
+        self.cache_episodes = bool(getattr(data_cfg, "cache_episodes", True)) if data_cfg is not None else True
+        self._parquet_cache: dict[str, pd.DataFrame] = {}
+        self._trajectory_cache: dict[tuple[str, int], pd.DataFrame] = {}
 
         self._trajectory_ids, self._trajectory_lengths, self._trajectory_tasks = self._get_trajectories()
         self._modality_keys = self._get_modality_keys()
@@ -202,6 +215,11 @@ class LeRobotSingleDataset(Dataset):
         The order of the lengths is the same as the order of the trajectory IDs.
         """
         return self._trajectory_lengths
+
+    @property
+    def trajectory_tasks(self) -> list:
+        """Per-episode metadata. v3 datasets use this for data/video chunk routing."""
+        return self._trajectory_tasks
 
     @property
     def all_steps(self) -> list[tuple[int, int]]:
@@ -281,11 +299,15 @@ class LeRobotSingleDataset(Dataset):
 
         # 1. Modality metadata
 
-        modality_meta_path = self.dataset_path / LE_ROBOT_MODALITY_OLD_FILENAME
-        if not modality_meta_path.exists():
-            modality_meta_path = self.dataset_path / LE_ROBOT_MODALITY_FILENAME
+        modality_meta_path = _first_existing_path(
+            self.dataset_path,
+            LE_ROBOT_MODALITY_OLD_FILENAME,
+            LE_ROBOT_MODALITY_FILENAME,
+            "modality_old.json",
+            "modality.json",
+        )
         assert (
-            modality_meta_path.exists()
+            modality_meta_path is not None
         ), f"Please provide a {LE_ROBOT_MODALITY_FILENAME} file in {self.dataset_path}"
         # 1.1. State and action modalities
         simplified_modality_meta: dict[str, dict] = {}
@@ -312,9 +334,9 @@ class LeRobotSingleDataset(Dataset):
                 }
 
         # 1.2. Video modalities
-        le_info_path = self.dataset_path / LE_ROBOT_INFO_FILENAME
+        le_info_path = _first_existing_path(self.dataset_path, LE_ROBOT_INFO_FILENAME, "info.json")
         assert (
-            le_info_path.exists()
+            le_info_path is not None
         ), f"Please provide a {LE_ROBOT_INFO_FILENAME} file in {self.dataset_path}"
         with open(le_info_path, "r") as f:
             le_info = json.load(f)
@@ -341,8 +363,16 @@ class LeRobotSingleDataset(Dataset):
             }
 
         # 2. Dataset statistics
-        stats_path = self.dataset_path / LE_ROBOT_STATS_FILENAME
+        stats_path = _first_existing_path(
+            self.dataset_path,
+            LE_ROBOT_STATS_FILENAME,
+            "stats_gr00t.json",
+            "meta/stats.json",
+            "stats.json",
+        )
         try:
+            if stats_path is None:
+                raise FileNotFoundError
             with open(stats_path, "r") as f:
                 le_statistics = json.load(f)
             for stat in le_statistics.values():
@@ -352,9 +382,12 @@ class LeRobotSingleDataset(Dataset):
             print(f"Calculating dataset statistics for {self.dataset_name}")
             # Get all parquet files in the dataset paths
             parquet_files = list((self.dataset_path).glob(LE_ROBOT_DATA_FILENAME))
+            if not parquet_files:
+                parquet_files = list((self.dataset_path).glob("chunk-*/*.parquet"))
             le_statistics = calculate_dataset_statistics(parquet_files)
-            with open(stats_path, "w") as f:
-                json.dump(le_statistics, f, indent=4)
+            if stats_path is not None:
+                with open(stats_path, "w") as f:
+                    json.dump(le_statistics, f, indent=4)
         dataset_statistics = {}
         for our_modality in ["state", "action"]:
             dataset_statistics[our_modality] = {}
@@ -383,16 +416,29 @@ class LeRobotSingleDataset(Dataset):
     def _get_trajectories(self) -> tuple[np.ndarray, np.ndarray]:
         """Get the trajectories in the dataset."""
         # Get trajectory lengths, IDs, and whitelist from dataset metadata
-        episode_path = self.dataset_path / LE_ROBOT_EPISODE_FILENAME
-        with open(episode_path, "r") as f:
-            episode_metadata = [json.loads(line) for line in f]
+        episode_path = _first_existing_path(
+            self.dataset_path,
+            LE_ROBOT_EPISODE_FILENAME,
+            "episodes.jsonl",
+        )
+        if episode_path is not None:
+            with open(episode_path, "r") as f:
+                episode_metadata = [json.loads(line) for line in f]
+        else:
+            episode_parquet = _first_existing_path(
+                self.dataset_path,
+                "meta/episodes/chunk-000/file-000.parquet",
+                "episodes/chunk-000/file-000.parquet",
+            )
+            assert episode_parquet is not None, f"Please provide episode metadata in {self.dataset_path}"
+            episode_metadata = pd.read_parquet(episode_parquet).to_dict("records")
         trajectory_ids = []
         trajectory_lengths = []
         trajectory_tasks = []
         for episode in episode_metadata:
             trajectory_ids.append(episode["episode_index"])
             trajectory_lengths.append(episode["length"])
-            trajectory_tasks.append(episode['tasks'])
+            trajectory_tasks.append(episode)
         return np.array(trajectory_ids), np.array(trajectory_lengths), trajectory_tasks
 
     def _get_all_steps(self) -> list[tuple[int, int]]:
@@ -412,11 +458,13 @@ class LeRobotSingleDataset(Dataset):
 
 
         steps_path = self.dataset_path / "meta" / steps_filename
+        fallback_steps_path = self.dataset_path / "steps_data_index.pkl"
         
         # Try to load cached steps first
         try:
-            if steps_path.exists():
-                with open(steps_path, "rb") as f:
+            existing_steps_path = steps_path if steps_path.exists() else fallback_steps_path
+            if existing_steps_path.exists():
+                with open(existing_steps_path, "rb") as f:
                     cached_data = pickle.load(f)
                 return cached_data["steps"]
 
@@ -636,11 +684,15 @@ class LeRobotSingleDataset(Dataset):
 
     def _get_lerobot_modality_meta(self) -> LeRobotModalityMetadata:
         """Get the metadata for the LeRobot dataset."""
-        modality_meta_path = self.dataset_path / LE_ROBOT_MODALITY_OLD_FILENAME
-        if not modality_meta_path.exists():
-            modality_meta_path = self.dataset_path / LE_ROBOT_MODALITY_FILENAME
+        modality_meta_path = _first_existing_path(
+            self.dataset_path,
+            LE_ROBOT_MODALITY_OLD_FILENAME,
+            LE_ROBOT_MODALITY_FILENAME,
+            "modality_old.json",
+            "modality.json",
+        )
         assert (
-            modality_meta_path.exists()
+            modality_meta_path is not None
         ), f"Please provide a {LE_ROBOT_MODALITY_FILENAME} file in {self.dataset_path}"
         with open(modality_meta_path, "r") as f:
             modality_meta = LeRobotModalityMetadata.model_validate(json.load(f))
@@ -648,18 +700,22 @@ class LeRobotSingleDataset(Dataset):
 
     def _get_lerobot_info_meta(self) -> dict:
         """Get the metadata for the LeRobot dataset."""
-        info_meta_path = self.dataset_path / LE_ROBOT_INFO_FILENAME
+        info_meta_path = _first_existing_path(self.dataset_path, LE_ROBOT_INFO_FILENAME, "info.json")
+        assert info_meta_path is not None, f"Please provide a {LE_ROBOT_INFO_FILENAME} file in {self.dataset_path}"
         with open(info_meta_path, "r") as f:
             info_meta = json.load(f)
         return info_meta
 
     def _get_data_path_pattern(self) -> str:
         """Get the data path pattern for the LeRobot dataset."""
-        return self.lerobot_info_meta["data_path"]
+        return self.lerobot_info_meta.get("data_path", "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet")
 
     def _get_video_path_pattern(self) -> str:
         """Get the video path pattern for the LeRobot dataset."""
-        return self.lerobot_info_meta["video_path"]
+        return self.lerobot_info_meta.get(
+            "video_path",
+            "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
+        )
 
     def _get_chunk_size(self) -> int:
         """Get the chunk size for the LeRobot dataset."""
@@ -667,10 +723,15 @@ class LeRobotSingleDataset(Dataset):
 
     def _get_tasks(self) -> pd.DataFrame:
         """Get the tasks for the dataset."""
-        tasks_path = self.dataset_path / LE_ROBOT_TASKS_FILENAME
-        with open(tasks_path, "r") as f:
-            tasks = [json.loads(line) for line in f]
-        df = pd.DataFrame(tasks)
+        tasks_path = _first_existing_path(self.dataset_path, LE_ROBOT_TASKS_FILENAME, "tasks.jsonl")
+        if tasks_path is not None:
+            with open(tasks_path, "r") as f:
+                tasks = [json.loads(line) for line in f]
+            df = pd.DataFrame(tasks)
+        else:
+            tasks_parquet = _first_existing_path(self.dataset_path, "meta/tasks.parquet", "tasks.parquet")
+            assert tasks_parquet is not None, f"Please provide task metadata in {self.dataset_path}"
+            df = pd.read_parquet(tasks_parquet).reset_index()
         return df.set_index("task_index")
 
     def _check_integrity(self):
@@ -803,11 +864,46 @@ class LeRobotSingleDataset(Dataset):
             return self.curr_traj_data
         else:
             chunk_index = self.get_episode_chunk(trajectory_id)
+            file_index = 0
+            trajectory_index = self.get_trajectory_index(trajectory_id)
+            episode_info = self.trajectory_tasks[trajectory_index]
+            if isinstance(episode_info, dict):
+                chunk_index = int(episode_info.get("data/chunk_index", chunk_index))
+                file_index = int(episode_info.get("data/file_index", file_index))
             parquet_path = self.dataset_path / self.data_path_pattern.format(
-                episode_chunk=chunk_index, episode_index=trajectory_id
+                episode_chunk=chunk_index,
+                episode_index=trajectory_id,
+                chunk_index=chunk_index,
+                file_index=file_index,
             )
+            if not parquet_path.exists():
+                fallback_path = self.dataset_path / f"chunk-{chunk_index:03d}" / f"file-{file_index:03d}.parquet"
+                if fallback_path.exists():
+                    parquet_path = fallback_path
             assert parquet_path.exists(), f"Parquet file not found at {parquet_path}"
-            return pd.read_parquet(parquet_path)
+            parquet_key = str(parquet_path)
+            trajectory_key = (parquet_key, int(trajectory_id))
+            if self.cache_episodes and trajectory_key in self._trajectory_cache:
+                trajectory_data = self._trajectory_cache[trajectory_key]
+                self.curr_traj_id = trajectory_id
+                self.curr_traj_data = trajectory_data
+                return trajectory_data
+
+            if self.cache_parquet and parquet_key in self._parquet_cache:
+                parquet_data = self._parquet_cache[parquet_key]
+            else:
+                parquet_data = pd.read_parquet(parquet_path)
+                if self.cache_parquet:
+                    self._parquet_cache[parquet_key] = parquet_data
+
+            trajectory_data = parquet_data
+            if "episode_index" in trajectory_data.columns:
+                trajectory_data = trajectory_data[trajectory_data["episode_index"] == trajectory_id].reset_index(drop=True)
+            if self.cache_episodes:
+                self._trajectory_cache[trajectory_key] = trajectory_data
+            self.curr_traj_id = trajectory_id
+            self.curr_traj_data = trajectory_data
+            return trajectory_data
 
     def get_trajectory_index(self, trajectory_id: int) -> int:
         """Get the index of the trajectory in the dataset by the trajectory ID.
@@ -882,10 +978,25 @@ class LeRobotSingleDataset(Dataset):
         original_key = self.lerobot_modality_meta.video[key].original_key
         if original_key is None:
             original_key = key
+        file_index = 0
+        trajectory_index = self.get_trajectory_index(trajectory_id)
+        episode_info = self.trajectory_tasks[trajectory_index]
+        if isinstance(episode_info, dict):
+            chunk_index = int(episode_info.get(f"videos/{original_key}/chunk_index", chunk_index))
+            file_index = int(episode_info.get(f"videos/{original_key}/file_index", file_index))
         video_filename = self.video_path_pattern.format(
-            episode_chunk=chunk_index, episode_index=trajectory_id, video_key=original_key
+            episode_chunk=chunk_index,
+            episode_index=trajectory_id,
+            chunk_index=chunk_index,
+            file_index=file_index,
+            video_key=original_key,
         )
-        return self.dataset_path / video_filename
+        video_path = self.dataset_path / video_filename
+        if not video_path.exists():
+            fallback_path = self.dataset_path / original_key / f"chunk-{chunk_index:03d}" / f"file-{file_index:03d}.mp4"
+            if fallback_path.exists():
+                return fallback_path
+        return video_path
 
     def get_video(
         self,
@@ -2129,6 +2240,3 @@ class LeRobotMixtureDataset(Dataset):
                 dataset.set_transforms_metadata(self.merged_metadata[dataset.tag])
         
         print(f"Applied cached statistics for {len(self.merged_metadata)} embodiment tags.")
-
-
-

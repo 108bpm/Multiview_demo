@@ -1,5 +1,6 @@
 import json
 import os
+import random
 from accelerate.logging import get_logger
 import numpy as np
 from torch.utils.data import DataLoader
@@ -9,6 +10,16 @@ from pathlib import Path
 from starVLA.dataloader.vlm_datasets import make_vlm_dataloader
 
 logger = get_logger(__name__)
+
+
+def _cfg_get(cfg, key, default=None):
+    return getattr(cfg, key, default) if cfg is not None else default
+
+
+def _seed_worker(worker_id: int):
+    worker_seed = (np.random.get_state()[1][0] + worker_id) % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
 
 def save_dataset_statistics(dataset_statistics, run_dir):
     """Saves a `dataset_statistics.json` file."""
@@ -41,14 +52,24 @@ def build_dataloader(cfg, dataset_py="lerobot_datasets_oxe"): # TODO now here on
 
         vla_dataset = get_vla_dataset(data_cfg=vla_dataset_cfg)
         
-        vla_train_dataloader = DataLoader(
-            vla_dataset,
-            batch_size=cfg.datasets.vla_data.per_device_batch_size,
-            collate_fn=collate_fn,
-            num_workers=cfg.datasets.vla_data.num_workers,
-            # shuffle=True
-        )        
-        if dist.get_rank() == 0: 
+        num_workers = cfg.datasets.vla_data.num_workers
+        dataloader_kwargs = {
+            "batch_size": cfg.datasets.vla_data.per_device_batch_size,
+            "collate_fn": collate_fn,
+            "num_workers": num_workers,
+            "pin_memory": bool(_cfg_get(cfg.datasets.vla_data, "pin_memory", True)),
+            "worker_init_fn": _seed_worker,
+        }
+        if num_workers > 0:
+            dataloader_kwargs["persistent_workers"] = bool(
+                _cfg_get(cfg.datasets.vla_data, "persistent_workers", True)
+            )
+            dataloader_kwargs["prefetch_factor"] = int(
+                _cfg_get(cfg.datasets.vla_data, "prefetch_factor", 4)
+            )
+
+        vla_train_dataloader = DataLoader(vla_dataset, **dataloader_kwargs)
+        if not (dist.is_available() and dist.is_initialized()) or dist.get_rank() == 0:
             
             output_dir = Path(cfg.output_dir)
             vla_dataset.save_dataset_statistics(output_dir / "dataset_statistics.json")

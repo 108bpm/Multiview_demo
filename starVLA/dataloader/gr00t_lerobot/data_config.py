@@ -1358,6 +1358,79 @@ class RealDataConfig:
 
         return ComposedModalityTransform(transforms=transforms)
 
+
+class PiperBimanualDataConfig:
+    motor_names = [
+        "left_joint_1.pos",
+        "left_joint_2.pos",
+        "left_joint_3.pos",
+        "left_joint_4.pos",
+        "left_joint_5.pos",
+        "left_joint_6.pos",
+        "left_gripper.pos",
+        "right_joint_1.pos",
+        "right_joint_2.pos",
+        "right_joint_3.pos",
+        "right_joint_4.pos",
+        "right_joint_5.pos",
+        "right_joint_6.pos",
+        "right_gripper.pos",
+    ]
+    video_keys = [
+        "video.primary",
+        "video.left_wrist",
+        "video.right_wrist",
+    ]
+    state_keys = [f"state.{name}" for name in motor_names]
+    action_keys = [f"action.{name}" for name in motor_names]
+    language_keys = ["annotation.human.action.task_description"]
+    observation_indices = [0]
+    action_indices = list(range(10))
+
+    def modality_config(self):
+        video_modality = ModalityConfig(
+            delta_indices=self.observation_indices,
+            modality_keys=self.video_keys,
+        )
+        state_modality = ModalityConfig(
+            delta_indices=self.observation_indices,
+            modality_keys=self.state_keys,
+        )
+        action_modality = ModalityConfig(
+            delta_indices=self.action_indices,
+            modality_keys=self.action_keys,
+        )
+        language_modality = ModalityConfig(
+            delta_indices=self.observation_indices,
+            modality_keys=self.language_keys,
+        )
+        return {
+            "video": video_modality,
+            "state": state_modality,
+            "action": action_modality,
+            "language": language_modality,
+        }
+
+    def transform(self):
+        normalization_modes = {
+            key: "min_max"
+            for key in [*self.state_keys, *self.action_keys]
+        }
+        transforms = [
+            StateActionToTensor(apply_to=self.state_keys),
+            StateActionToTensor(apply_to=self.action_keys),
+            StateActionTransform(
+                apply_to=[*self.state_keys, *self.action_keys],
+                normalization_modes=normalization_modes,
+            ),
+            ConcatStateActionOnlyTransform(
+                state_concat_order=self.state_keys,
+                action_concat_order=self.action_keys,
+            ),
+        ]
+        return ComposedModalityTransform(transforms=transforms)
+
+
 ROBOT_TYPE_CONFIG_MAP = {
     "libero_franka": Libero4in1DataConfig(),
     "libero_franka_mv": Libero4in1MVDataConfig(),
@@ -1372,6 +1445,6 @@ ROBOT_TYPE_CONFIG_MAP = {
     "robotwin50": AgilexData50Config(),
     "fourier_gr1_arms_waist": FourierGr1ArmsWaistDataConfig(),
     "custom_robot_config": SingleFrankaRobotiqDeltaEefDataConfig(),
-    "real": RealDataConfig()
+    "real": RealDataConfig(),
+    "piper_bimanual": PiperBimanualDataConfig(),
 }
-

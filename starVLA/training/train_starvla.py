@@ -58,6 +58,19 @@ from accelerate.logging import get_logger
 logger = get_logger(__name__)
 
 
+def is_dist_initialized() -> bool:
+    return dist.is_available() and dist.is_initialized()
+
+
+def is_rank_zero() -> bool:
+    return not is_dist_initialized() or dist.get_rank() == 0
+
+
+def dist_barrier() -> None:
+    if is_dist_initialized():
+        dist.barrier()
+
+
 def load_fast_tokenizer():
     fast_tokenizer = AutoProcessor.from_pretrained("physical-intelligence/fast", trust_remote_code=True)
     return fast_tokenizer
@@ -68,7 +81,7 @@ def setup_directories(cfg) -> Path:
     cfg.output_dir = os.path.join(cfg.run_root_dir, cfg.run_id)
     output_dir = Path(cfg.output_dir)
 
-    if not dist.is_initialized() or dist.get_rank() == 0:
+    if is_rank_zero():
         # create output directory and checkpoint directory
         os.makedirs(output_dir, exist_ok=True)
         os.makedirs(output_dir / "checkpoints", exist_ok=True)
@@ -101,7 +114,7 @@ def prepare_data(cfg, accelerator, output_dir) -> Tuple[DataLoader, DataLoader]:
     vla_train_dataloader = build_dataloader(cfg=cfg, dataset_py=cfg.datasets.vla_data.dataset_py)
 
     accelerator.dataloader_config.dispatch_batches = False
-    dist.barrier()
+    dist_barrier()
 
     return vla_train_dataloader
 
@@ -119,7 +132,7 @@ def setup_optimizer_and_scheduler(model, cfg) -> Tuple[torch.optim.Optimizer, to
     )
 
     # print optimizer group info
-    if dist.is_initialized() and dist.get_rank() == 0:
+    if is_rank_zero():
         for i, group in enumerate(optimizer.param_groups):
             logger.info(f"LR Group {group['name']}: lr={group['lr']}, num_params={len(group['params'])}")
 
@@ -151,7 +164,7 @@ class VLATrainer(TrainerUtils):
 
     def prepare_training(self):
 
-        rank = dist.get_rank() if dist.is_initialized() else 0
+        rank = dist.get_rank() if is_dist_initialized() else 0
         seed = self.config.seed + rank if hasattr(self.config, "seed") else rank + 3047
         set_seed(seed)
 
@@ -188,14 +201,20 @@ class VLATrainer(TrainerUtils):
 
     def _init_wandb(self):
         """initialize Weights & Biases"""
+        trackers = list(getattr(self.config, "trackers", []))
+        self.use_wandb = (
+            "wandb" in trackers
+            and os.environ.get("WANDB_DISABLED", "").lower() not in {"true", "1", "yes"}
+        )
         if self.accelerator.is_main_process:
-            wandb.init(
-                name=self.config.run_id,
-                dir=os.path.join(self.config.output_dir, "wandb"),
-                project=self.config.wandb_project,
-                entity=self.config.wandb_entity,
-                group="vla-train",
-            )
+            if self.use_wandb:
+                wandb.init(
+                    name=self.config.run_id,
+                    dir=os.path.join(self.config.output_dir, "wandb"),
+                    project=self.config.wandb_project,
+                    entity=self.config.wandb_entity,
+                    group="vla-train",
+                )
             self.writer = SummaryWriter(log_dir=os.path.join(self.config.output_dir, "logs"))
 
     def _init_checkpointing(self):
@@ -298,18 +317,18 @@ class VLATrainer(TrainerUtils):
     def _log_metrics(self, metrics):
         """record training metrics"""
         if self.completed_steps % self.config.trainer.logging_frequency == 0:
-            if dist.get_rank() == 0:
+            if is_rank_zero():
                 # add learning rate 
                 metrics["learning_rate"] = self.lr_scheduler.get_last_lr()[0] # see lr group in yaml.trainer.learning_rate
 
                 # add epoch info
                 metrics["epoch"] = round(self.completed_steps / len(self.vla_train_dataloader), 2)
 
-                # record to W&B
-                wandb.log(metrics, step=self.completed_steps)
+                if getattr(self, "use_wandb", False):
+                    wandb.log(metrics, step=self.completed_steps)
                 # debug output
                 logger.info(f"Step {self.completed_steps}, Loss: {metrics})")
-        if dist.get_rank() == 0:
+        if is_rank_zero():
             self.log_dict_to_tensorboard(metrics)
 
     def _create_data_iterators(self):
@@ -425,7 +444,7 @@ class VLATrainer(TrainerUtils):
             average_score = score / num_pots
             step_metrics["mse_score"] = average_score
         pass
-        dist.barrier()  # ensure all processes are synchronized
+        dist_barrier()  # ensure all processes are synchronized
         return step_metrics
 
     def _log_training_config(self):
@@ -491,7 +510,8 @@ class VLATrainer(TrainerUtils):
 
         # close W&B
         if self.accelerator.is_main_process:
-            wandb.finish()
+            if getattr(self, "use_wandb", False):
+                wandb.finish()
 
         self.accelerator.wait_for_everyone()
 
@@ -528,8 +548,11 @@ def main(cfg) -> None:
 
     # And... we're done!
     logger.info("... and that's all, folks!")
-    dist.barrier()
-    dist.destroy_process_group()
+    dist_barrier()
+    if is_dist_initialized() and dist.get_world_size() == 1:
+        os._exit(0)
+    if is_dist_initialized() and dist.get_world_size() > 1:
+        dist.destroy_process_group()
 
 
 if __name__ == "__main__":
@@ -544,7 +567,7 @@ if __name__ == "__main__":
     cfg = OmegaConf.merge(cfg, cli_cfg)
 
     # if cfg.is_debug:
-    if cfg.is_debug and dist.is_initialized() and dist.get_rank() == 0:
+    if cfg.is_debug and is_rank_zero():
         import debugpy
         debugpy.listen(("0.0.0.0", 10092))
         print("🔍 Rank 0 waiting for debugger attach on port 10092...")

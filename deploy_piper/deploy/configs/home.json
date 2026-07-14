@@ -1,0 +1,31 @@
+{
+  "_notes": [
+    "Hardware smoke test: dummy server sends a linear action chunk from current state toward home.",
+    "Home target defaults to all zeros for the 14-DoF bimanual Piper action vector.",
+    "Run server and client separately."
+  ],
+  "server": {
+    "adapter": "dummy",
+    "args": {
+      "state_dim": "14",
+      "action_dim": "14",
+      "chunk_size": "30",
+      "fps": "30",
+      "image_keys": "",
+      "mode": "home",
+      "state_scale": "1.7453292519943296e-5,1.7453292519943296e-5,1.7453292519943296e-5,1.7453292519943296e-5,1.7453292519943296e-5,1.7453292519943296e-5,1e-6,1.7453292519943296e-5,1.7453292519943296e-5,1.7453292519943296e-5,1.7453292519943296e-5,1.7453292519943296e-5,1.7453292519943296e-5,1e-6",
+      "action_min": "-inf,-inf,-inf,-inf,-inf,-inf,0,-inf,-inf,-inf,-inf,-inf,-inf,0",
+      "action_max": "inf,inf,inf,inf,inf,inf,0.08,inf,inf,inf,inf,inf,inf,0.08",
+      "checkpoint": "dummy-home-v3"
+    },
+    "port": 8090
+  },
+  "client": {
+    "robot_type": "bi_piper_follower",
+    "robot_id": "bi_piper",
+    "cameras": {},
+    "camera_map": {},
+    "duration_s": 5,
+    "fps": 30
+  }
+}

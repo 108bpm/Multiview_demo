@@ -1,0 +1,13 @@
+{
+  "_notes": [
+    "Runnable sample for 'deploy your own VLA': dummy adapter, no GPU, no checkpoint.",
+    "Server-only (no 'client' section): nothing touches the arms; poke it with curl http://127.0.0.1:8090/info.",
+    "Copy this + deploy/adapters/dummy.py as the starting point for a new policy; activate its environment and set server.adapter to package.module:ClassName.",
+    "Port 8090 so it never collides with a real policy on 8080."
+  ],
+  "server": {
+    "adapter": "dummy",
+    "args": {"state_dim": "14", "action_dim": "14", "chunk_size": "10", "fps": "30"},
+    "port": 8090
+  }
+}

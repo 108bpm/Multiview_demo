@@ -1,0 +1,28 @@
+{
+  "_notes": [
+    "StarVLA checkpoint trained on datasets/bimanual_stack_cup_bowl with deploy_piper's 14-D bimanual Piper motor order.",
+    "Train first, then update server.args.checkpoint if the selected step differs.",
+    "Run from deploy_piper/ or set PYTHONPATH=deploy_piper:$PYTHONPATH when launching from repo root."
+  ],
+  "server": {
+    "adapter": "deploy.adapters.starvla:StarVLAAdapter",
+    "args": {
+      "checkpoint": "/data3/jinbibo/VLA/Multi-view-VLA/results/Checkpoints/starvla_piper_bimanual/checkpoints/steps_40000_pytorch_model.pt",
+      "device": "cuda",
+      "fps": "30",
+      "image_keys": "top,l_wrist,r_wrist"
+    },
+    "port": 8081
+  },
+  "client": {
+    "robot_type": "bi_piper_follower",
+    "robot_id": "bi_piper",
+    "cameras": {
+      "l_wrist": {"type": "opencv", "index_or_path": "/dev/l_wrist", "width": 480, "height": 640, "fps": 120, "rotation": -90, "fourcc": "MJPG"},
+      "top": {"type": "opencv", "index_or_path": "/dev/top", "width": 640, "height": 480, "fps": 120, "rotation": 0, "fourcc": "MJPG"},
+      "r_wrist": {"type": "opencv", "index_or_path": "/dev/r_wrist", "width": 480, "height": 640, "fps": 120, "rotation": 90, "fourcc": "MJPG"}
+    },
+    "camera_map": {"top": "top", "l_wrist": "l_wrist", "r_wrist": "r_wrist"},
+    "first_predict_timeout_s": 90
+  }
+}
